@@ -17,7 +17,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c99 -g -pedantic -I$(SOURCE_PATH)
 
 # Flags for the linker.
-LDFLAGS = -pthread
+LDFLAGS = -pthread -lm
 
 # Command to remove files.
 RM = rm -f

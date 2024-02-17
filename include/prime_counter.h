@@ -45,7 +45,7 @@
 /* Includes Section */
 /********************/
 #include "Queue.h"
-#include <stdbool.h>
+//#include <stdbool.h>
 
 
 /*********************/
@@ -63,7 +63,7 @@ int nprocs();
  * @param n The number to be checked if it is prime.
  * @return True if the number is prime, false otherwise.
 */
-bool isPrime(int n);
+int isPrime(int n);
 
 /*
  * @brief Function that is executed by each thread.
