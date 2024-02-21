@@ -1,21 +1,3 @@
-/*
- *  Advanced Programming Course Assignment 2
- *  Thread-Safe Queue Implementation
- *  Copyright (C) 2024  Roy Simanovich and Almog Shor
- *
- *  This program is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
-
 #include "../include/Queue.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,16 +7,37 @@ PQueue queueCreate() {
 
 	if (queue == NULL)
 	{
-		perror("malloc() failed");
+		fprintf(stderr, "queueCreate() failed: malloc() failed\n");
 		return NULL;
 	}
 
-	queue->head = NULL;
-	queue->tail = NULL;
+	queue->front = 0;
+	queue->rear = -1;
 	queue->size = 0;
 
-	MUTEX_INIT(&queue->lock);
-	COND_INIT(&queue->cond);
+	if (pthread_mutex_init(&queue->lock, NULL) != 0)
+	{
+		fprintf(stderr, "queueCreate() failed: pthread_mutex_init() failed\n");
+		free(queue);
+		return NULL;
+	}
+
+	if (pthread_cond_init(&queue->full, NULL) != 0)
+	{
+		fprintf(stderr, "queueCreate() failed: pthread_cond_init() failed\n");
+		MUTEX_DESTROY(&queue->lock);
+		free(queue);
+		return NULL;
+	}
+
+	if (pthread_cond_init(&queue->empty, NULL) != 0)
+	{
+		fprintf(stderr, "queueCreate() failed: pthread_cond_init() failed\n");
+		MUTEX_DESTROY(&queue->lock);
+		COND_DESTROY(&queue->full);
+		free(queue);
+		return NULL;
+	}
 
 	return queue;
 }
@@ -48,19 +51,9 @@ void queueDestroy(PQueue queue) {
 
 	MUTEX_LOCK(&queue->lock);
 
-	PQueueNode node = queue->head;
-
-	// If the queue isn't empty, free all the nodes and free the data they hold.
-	while (node != NULL)
-	{
-		PQueueNode next = node->next;
-		free(node);
-		node = next;
-	}
-
-	MUTEX_UNLOCK(&queue->lock);
-	COND_DESTROY(&queue->cond);
 	MUTEX_DESTROY(&queue->lock);
+	COND_DESTROY(&queue->full);
+	COND_DESTROY(&queue->empty);
 
 	free(queue);
 }
@@ -72,35 +65,16 @@ void queueEnqueue(PQueue queue, int data) {
 		return;
 	}
 
-	PQueueNode node = (PQueueNode)malloc(sizeof(QueueNode));
-
-	if (node == NULL)
-	{
-		perror("malloc() failed");
-		return;
-	}
-
-	node->data = data;
-	node->next = NULL;
-
 	MUTEX_LOCK(&queue->lock);
 
-	if (queue->head == NULL)
-	{
-		queue->head = node;
-		queue->tail = node;
+	while (queue->size == QUEUE_MAX_SIZE)
+		COND_WAIT(&queue->full, &queue->lock);
 
-		COND_SIGNAL(&queue->cond);
-	}
-
-	else
-	{
-		queue->tail->next = node;
-		queue->tail = node;
-	}
-
+	queue->rear = (queue->rear + 1) % QUEUE_MAX_SIZE;
+	queue->data[queue->rear] = data;
 	queue->size++;
 
+	COND_SIGNAL(&queue->empty);
 	MUTEX_UNLOCK(&queue->lock);
 }
 
@@ -108,26 +82,19 @@ int queueDequeue(PQueue queue) {
 	if (queue == NULL)
 	{
 		fprintf(stderr, "queueDequeue() failed: queue is NULL\n");
-		return -2;
+		return -1;
 	}
 
 	MUTEX_LOCK(&queue->lock);
 
-	// Wait for the queue to be non-empty.
-	while (queue->head == NULL)
-		COND_WAIT(&queue->cond, &queue->lock);
+	while (queue->size == 0)
+		COND_WAIT(&queue->empty, &queue->lock);
 
-	PQueueNode node = queue->head;
-	int data = node->data;
-
-	queue->head = node->next;
-
-	if (queue->head == NULL)
-		queue->tail = NULL;
-
-	free(node);
+	int data = queue->data[queue->front];
+	queue->front = (queue->front + 1) % QUEUE_MAX_SIZE;
 	queue->size--;
 
+	COND_SIGNAL(&queue->full);
 	MUTEX_UNLOCK(&queue->lock);
 
 	return data;
@@ -162,44 +129,44 @@ int queueIsEmpty(PQueue queue) {
 		return size;
 	}
 
-	void *queuePeek(PQueue queue) {
+	int queuePeek(PQueue queue) {
 		if (queue == NULL)
 		{
 			fprintf(stderr, "queuePeek() failed: queue is NULL\n");
-			return NULL;
+			return -1;
 		}
 
 		MUTEX_LOCK(&queue->lock);
 
-		if (queue->head == NULL)
+		if (queue->size == 0)
 		{
 			MUTEX_UNLOCK(&queue->lock);
-			return NULL;
+			return -1;
 		}
 
-		void *data = queue->head->data;
+		int data = queue->data[queue->front];
 
 		MUTEX_UNLOCK(&queue->lock);
 
 		return data;
 	}
 
-	void *queuePeekTail(PQueue queue) {
+	int queuePeekTail(PQueue queue) {
 		if (queue == NULL)
 		{
 			fprintf(stderr, "queuePeekTail() failed: queue is NULL\n");
-			return NULL;
+			return -1;
 		}
 
 		MUTEX_LOCK(&queue->lock);
 
-		if (queue->tail == NULL)
+		if (queue->size == 0)
 		{
 			MUTEX_UNLOCK(&queue->lock);
-			return NULL;
+			return -1;
 		}
 
-		void *data = queue->tail->data;
+		int data = queue->data[queue->rear];
 
 		MUTEX_UNLOCK(&queue->lock);
 
@@ -218,25 +185,28 @@ int queueIsEmpty(PQueue queue) {
 		fprintf(stdout, "Queue info:\n[\n");
 		fprintf(stdout, "\tQueue: %p\n", (void *)queue);
 		fprintf(stdout, "\tQueue size: %d\n", queue->size);
-		fprintf(stdout, "\tQueue head: %p\n", (void *)queue->head);
-		fprintf(stdout, "\tQueue tail: %p\n", (void *)queue->tail);
+		fprintf(stdout, "\tQueue front: %d\n", queue->front);
+		fprintf(stdout, "\tQueue rear: %d\n", queue->rear);
 		fprintf(stdout, "\tQueue lock: %p\n", (void *)&queue->lock);
-		fprintf(stdout, "\tQueue cond: %p\n", (void *)&queue->cond);
+		fprintf(stdout, "\tQueue full cond: %p\n", (void *)&queue->full);
+		fprintf(stdout, "\tQueue empty cond: %p\n", (void *)&queue->empty);
 		fprintf(stdout, "\tQueue nodes:\n\t\t");
 
-		if (queue->head == NULL)
+		if (queue->size == 0)
 		{
 			fprintf(stdout, "NULL\n]\n");
 			MUTEX_UNLOCK(&queue->lock);
 			return;
 		}
 
-		PQueueNode node = queue->head;
+		int i = queue->front;
 
-		while (node != NULL)
+		fprintf(stdout, "%d", queue->data[i]);
+
+		for (int j = 1; j < queue->size; j++)
 		{
-			fprintf(stdout, "%p -> ", node->data);
-			node = node->next;
+			i = (i + 1) % QUEUE_MAX_SIZE;
+			fprintf(stdout, " -> %d", queue->data[i]);
 		}
 
 		fprintf(stdout, "\n]\n");

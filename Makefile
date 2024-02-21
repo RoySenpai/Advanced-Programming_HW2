@@ -17,7 +17,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Werror -std=c99 -g -pedantic -I$(SOURCE_PATH)
 
 # Flags for the linker.
-LDFLAGS = -pthread -lm
+LDFLAGS = -pthread
 
 # Command to remove files.
 RM = rm -f
@@ -35,13 +35,15 @@ OBJECTS = $(subst sources/,objects/,$(subst .c,.o,$(SOURCES)))
 # Variable for the object files.
 OBJECTS_GEN = generator.o
 OBJECTS_CNT = prime_counter.o Queue.o
+OBJECTS_CNT_ONLY_THREADS = prime_counter_only_threads.o Queue.o
 OBJECTS_CNT_SIMPLE = prime_counter_no_threads.o
 OBJ_FILES_GEN = $(addprefix $(OBJECT_PATH)/, $(OBJECTS_GEN))
 OBJ_FILES_CNT = $(addprefix $(OBJECT_PATH)/, $(OBJECTS_CNT))
 OBJ_FILES_CNT_SIMPLE = $(addprefix $(OBJECT_PATH)/, $(OBJECTS_CNT_SIMPLE))
+OBJ_FILES_CNT_ONLY_THREADS = $(addprefix $(OBJECT_PATH)/, $(OBJECTS_CNT_ONLY_THREADS))
 
 # Variables for the names of the executables.
-EXECUTABLES = generator prime_counter prime_counter_no_threads
+EXECUTABLES = randomGenerator primesCounter prime_counter_only_threads prime_counter_no_threads
 
 # Phony targets - targets that are not files but commands to be executed by make.
 .PHONY: all default clean
@@ -58,14 +60,18 @@ default: all
 ############
 
 # Compile the generator Program.
-generator: $(OBJ_FILES_GEN)
+randomGenerator: $(OBJ_FILES_GEN)
 	$(CC) $(CFLAGS) -o $@ $^
 
-# Compile the prime_counter Program (with threads).
-prime_counter: $(OBJ_FILES_CNT)
+# Compile the prime counter Program (with threads and isPrime improvement).
+primesCounter: $(OBJ_FILES_CNT)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
-# Compile the prime_counter_no_threads Program (without threads).
+# Compile the prime counter Program (with threads, but no improvement to isPrime).
+prime_counter_only_threads: $(OBJ_FILES_CNT_ONLY_THREADS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
+# Compile the prime counter Program (without threads).
 prime_counter_no_threads: $(OBJ_FILES_CNT_SIMPLE)
 	$(CC) $(CFLAGS) -o $@ $^
 

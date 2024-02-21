@@ -37,6 +37,7 @@
 
 /*
  * @brief Required for CPU_SET and CPU_ZERO
+ * @note This is a GNU extension, and might not be available on all systems.
 */
 #define _GNU_SOURCE
 
@@ -45,7 +46,6 @@
 /* Includes Section */
 /********************/
 #include "Queue.h"
-//#include <stdbool.h>
 
 
 /*********************/
